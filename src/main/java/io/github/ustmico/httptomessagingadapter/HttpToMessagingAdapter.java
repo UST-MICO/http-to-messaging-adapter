@@ -54,6 +54,18 @@ import java.util.stream.Collectors;
 public class HttpToMessagingAdapter {
 
 
+    protected static final String CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_URL = "adapterRequestUrl";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_METHOD = "adapterRequestMethod";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_SOURCE_HTTP_TO_MESSAGING_ADAPTER = "/http-to-messaging-adapter";
+    protected static final int MESSAGE_RESPONSE_TIMEOUT = 5;
+    protected static final String DEFAULT_HTTP_RESPONSE_VALUE = "500";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS = "httpResponseStatus";
+    protected static JsonNode defaultValue = null;
+
+    public HttpToMessagingAdapter() {
+        defaultValue = mapper.valueToTree(DEFAULT_HTTP_RESPONSE_VALUE);
+    }
+
     @Autowired
     private KafkaTemplate<String, MicoCloudEventImpl<JsonNode>> kafkaTemplate;
 
@@ -76,26 +88,35 @@ public class HttpToMessagingAdapter {
             kafkaTemplate.send(kafkaConfig.getOutputTopic(), micoCloudEvent);
             CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture = new CompletableFuture<>();
 
-            openRequestHandler.addRequest(micoCloudEvent.getId(), openRequestFuture);
-            MicoCloudEventImpl<JsonNode> response = openRequestFuture.get(5, TimeUnit.MINUTES);
+            MicoCloudEventImpl<JsonNode> response = waitForResponseMessage(micoCloudEvent.getId(), openRequestFuture);
 
-            JsonNode defaultValue = mapper.valueToTree("200");
-            int httpStatus = Integer.valueOf(response.getExtensionsMap().getOrDefault("httpResponseStatus", defaultValue).asText());
-            ResponseEntity.BodyBuilder responseBuild = ResponseEntity.status(httpStatus);
+            ResponseEntity.BodyBuilder responseBuild = getResponseBuilderWithHttpStatus(response);
+
             if (response.getData() != null) {
                 return responseBuild.body(response.getData());
             } else {
                 return responseBuild.build();
             }
         } catch (TimeoutException e) {
-            String errorMsg = "No response in time";
-            log.error(errorMsg, e);
-            return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(e);
+            return getErrorResponse(HttpStatus.GATEWAY_TIMEOUT, "No response in time", e);
         } catch (IOException e) {
-            String errorMsg = "An error occurred while reading the body";
-            log.error(errorMsg, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e);
+            return getErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An error occurred while reading the body", e);
         }
+    }
+
+    private ResponseEntity.BodyBuilder getResponseBuilderWithHttpStatus(MicoCloudEventImpl<JsonNode> response) {
+        int httpStatus = Integer.valueOf(response.getExtensionsMap().getOrDefault(CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS, defaultValue).asText());
+        return ResponseEntity.status(httpStatus);
+    }
+
+    private MicoCloudEventImpl<JsonNode> waitForResponseMessage(String messageId, CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture) throws InterruptedException, ExecutionException, TimeoutException {
+        openRequestHandler.addRequest(messageId, openRequestFuture);
+        return openRequestFuture.get(MESSAGE_RESPONSE_TIMEOUT, TimeUnit.MINUTES);
+    }
+
+    private ResponseEntity getErrorResponse(HttpStatus status, String errorMsg, Exception e) {
+        log.error(errorMsg, e);
+        return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(e);
     }
 
     private MicoCloudEventImpl<JsonNode> getMicoCloudEventFromHttpRequest(HttpServletRequest request, String uriWithQueryString) throws URISyntaxException, IOException {
@@ -104,9 +125,9 @@ public class HttpToMessagingAdapter {
         JsonNode uri = mapper.valueToTree(uriWithQueryString);
         JsonNode method = mapper.valueToTree(request.getMethod());
 
-        micoCloudEvent.setExtension("adapterRequestUrl", uri);
-        micoCloudEvent.setExtension("adapterRequestMethod", method);
-        micoCloudEvent.setSource(new URI("/http-to-messaging-adapter"));
+        micoCloudEvent.setExtension(CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_URL, uri);
+        micoCloudEvent.setExtension(CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_METHOD, method);
+        micoCloudEvent.setSource(new URI(CLOUD_EVENT_ATTRIBUTE_SOURCE_HTTP_TO_MESSAGING_ADAPTER));
         micoCloudEvent.setTime(ZonedDateTime.now());
         micoCloudEvent.setRandomId();
         micoCloudEvent.setIsErrorMessage(false);
