@@ -26,12 +26,12 @@ public class HttpRequestWrapper {
         this.bodyBase64 = Base64.getEncoder().encodeToString(body.getBytes());
     }
 
-    @JsonSetter("body")
+    @JsonSetter("base64body")
     public void setBodyBase64(String bodyBase64) {
         this.bodyBase64 = bodyBase64;
     }
 
-    @JsonGetter("body")
+    @JsonGetter("base64body")
     public String getBodyBase64() {
         return bodyBase64;
     }
