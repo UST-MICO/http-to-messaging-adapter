@@ -7,6 +7,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+
 @Slf4j
 @Component
 public class MessageListener {
@@ -16,10 +19,12 @@ public class MessageListener {
 
     @KafkaListener(topics = "${kafka.input-topic}", groupId = "${kafka.group-id}")
     public void receive(MicoCloudEventImpl<JsonNode> cloudEvent) {
-        log.debug("Received CloudEvent message: {}", cloudEvent);
-        if(cloudEvent.getCorrelationId().isPresent()){
-            openRequestHandler.getRequest(cloudEvent.getCorrelationId().get()).complete(cloudEvent);
+        log.info("Received CloudEvent message: {}", cloudEvent);
+        if (cloudEvent.getCorrelationId().isPresent()) {
+            Optional<CompletableFuture<MicoCloudEventImpl<JsonNode>>> openRequestOptinal = openRequestHandler.getRequest(cloudEvent.getCorrelationId().get());
+            if (openRequestOptinal.isPresent()) {
+                openRequestOptinal.get().complete(cloudEvent);
+            }
         }
-
     }
 }

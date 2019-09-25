@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,14 +18,15 @@ public class OpenRequestHandler {
 
     private ConcurrentHashMap<String, CompletableFuture<MicoCloudEventImpl<JsonNode>>> openRequests = new ConcurrentHashMap<>();
 
-    public synchronized CompletableFuture<MicoCloudEventImpl<JsonNode>> getRequest(String correlationId){
-       return openRequests.get(correlationId);
+    public synchronized Optional<CompletableFuture<MicoCloudEventImpl<JsonNode>>> getRequest(String correlationId) {
+        return Optional.ofNullable(openRequests.get(correlationId));
     }
 
-    public synchronized boolean addRequest(String correlationId, CompletableFuture<MicoCloudEventImpl<JsonNode>> value){
-        if(openRequests.containsKey(correlationId)){
+    public synchronized boolean addRequest(String correlationId, CompletableFuture<MicoCloudEventImpl<JsonNode>> value) {
+        log.info("Add open request to store. The store has a size of '{}'", openRequests.size());
+        if (openRequests.containsKey(correlationId)) {
             return false;
-        }else{
+        } else {
             openRequests.put(correlationId, value);
             return true;
         }
