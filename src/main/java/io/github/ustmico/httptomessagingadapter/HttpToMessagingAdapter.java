@@ -21,14 +21,19 @@ package io.github.ustmico.httptomessagingadapter;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.ustmico.httptomessagingadapter.config.BackendConfig;
 import io.github.ustmico.httptomessagingadapter.config.KafkaConfig;
 import io.github.ustmico.httptomessagingadapter.kafka.MicoCloudEventImpl;
+import io.github.ustmico.httptomessagingadapter.kafka.RouteHistory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,10 +43,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.ZonedDateTime;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -56,10 +58,15 @@ public class HttpToMessagingAdapter {
 
     protected static final String CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_URL = "adapterRequestUrl";
     protected static final String CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_METHOD = "adapterRequestMethod";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_BACKEND_URL = "backendUrl";
     protected static final String CLOUD_EVENT_ATTRIBUTE_SOURCE_HTTP_TO_MESSAGING_ADAPTER = "/http-to-messaging-adapter";
     protected static final int MESSAGE_RESPONSE_TIMEOUT = 5;
     protected static final String DEFAULT_HTTP_RESPONSE_VALUE = "500";
     protected static final String CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS = "httpResponseStatus";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_MESSAGE_TYPE = "httpEnvelop";
+    protected static final String CLOUD_EVENT_ATTRIBUTE_CONTENT_TYPE = "application/json";
+    protected static final String ROUTE_HISTORY_TYPE_TOPIC = "topic";
+
     protected static JsonNode defaultValue = null;
 
     public HttpToMessagingAdapter() {
@@ -74,6 +81,9 @@ public class HttpToMessagingAdapter {
 
     @Autowired
     OpenRequestHandler openRequestHandler;
+
+    @Autowired
+    BackendConfig backendConfig;
 
     private ObjectMapper mapper = new ObjectMapper();
 
@@ -92,8 +102,12 @@ public class HttpToMessagingAdapter {
 
             ResponseEntity.BodyBuilder responseBuild = getResponseBuilderWithHttpStatus(response);
 
-            if (response.getData() != null) {
-                return responseBuild.body(response.getData());
+            HttpRequestWrapper httpRequestWrapper = mapper.treeToValue(response.getData().get(), HttpRequestWrapper.class);
+            responseBuild = setHeaders(responseBuild, httpRequestWrapper.getHeader());
+
+            String responseBody = httpRequestWrapper.getBody();
+            if (responseBody != null && !responseBody.isEmpty()) {
+                return responseBuild.body(responseBody);
             } else {
                 return responseBuild.build();
             }
@@ -104,9 +118,20 @@ public class HttpToMessagingAdapter {
         }
     }
 
+    private ResponseEntity.BodyBuilder setHeaders(ResponseEntity.BodyBuilder responseBuilder, Map<String, String> headers) {
+        if (!headers.isEmpty()) {
+            MultiValueMap<String, String> multiValueHeaderMap = new LinkedMultiValueMap<>();
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                multiValueHeaderMap.put(entry.getKey(), Collections.singletonList(entry.getValue()));
+            }
+            return responseBuilder.headers(new HttpHeaders(multiValueHeaderMap));
+        }
+        return responseBuilder;
+    }
+
     private ResponseEntity.BodyBuilder getResponseBuilderWithHttpStatus(MicoCloudEventImpl<JsonNode> response) {
         int httpStatus = Integer.valueOf(response.getExtensionsMap().getOrDefault(CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS, defaultValue).asText());
-        return ResponseEntity.status(httpStatus);
+        return ResponseEntity.status(httpStatus).headers(new HttpHeaders());
     }
 
     private MicoCloudEventImpl<JsonNode> waitForResponseMessage(String messageId, CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture) throws InterruptedException, ExecutionException, TimeoutException {
@@ -124,15 +149,20 @@ public class HttpToMessagingAdapter {
 
         JsonNode uri = mapper.valueToTree(uriWithQueryString);
         JsonNode method = mapper.valueToTree(request.getMethod());
+        JsonNode backendUrl = mapper.valueToTree(backendConfig.getUrl());
 
         micoCloudEvent.setExtension(CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_URL, uri);
         micoCloudEvent.setExtension(CLOUD_EVENT_ATTRIBUTE_ADAPTER_REQUEST_METHOD, method);
         micoCloudEvent.setSource(new URI(CLOUD_EVENT_ATTRIBUTE_SOURCE_HTTP_TO_MESSAGING_ADAPTER));
+        micoCloudEvent.setExtension(CLOUD_EVENT_ATTRIBUTE_BACKEND_URL, backendUrl);
+        micoCloudEvent.setType(CLOUD_EVENT_ATTRIBUTE_MESSAGE_TYPE);
+        micoCloudEvent.setContentType(CLOUD_EVENT_ATTRIBUTE_CONTENT_TYPE);
         micoCloudEvent.setTime(ZonedDateTime.now());
         micoCloudEvent.setRandomId();
         micoCloudEvent.setIsErrorMessage(false);
         micoCloudEvent.setIsTestMessage(false);
         micoCloudEvent.setReturnTopic(kafkaConfig.getInputTopic());
+        updateRouteHistoryWithTopic(micoCloudEvent, kafkaConfig.getOutputTopic());
 
         HttpRequestWrapper httpRequestWrapper = new HttpRequestWrapper();
         httpRequestWrapper.setHeader(getRequestHeaderMap(request));
@@ -161,14 +191,44 @@ public class HttpToMessagingAdapter {
     }
 
 
-    public static String getUriWithQueryString(HttpServletRequest request) {
+    public String getUriWithQueryString(HttpServletRequest request) {
         String requestUri = request.getRequestURI();
         String queryString = request.getQueryString();
-        if (queryString == null) {
-            return requestUri;
-        } else {
-            return requestUri + "?" + queryString;
+        String backendUrl = backendConfig.getUrl();
+        if (backendUrl.endsWith("/")) {
+            backendUrl = backendUrl.substring(0, backendUrl.length() - 1);
         }
+        if (queryString == null) {
+            return backendUrl + requestUri;
+        } else {
+            return backendUrl + requestUri + "?" + queryString;
+        }
+    }
+
+    /**
+     * Add a topic routing step to the routing history of the cloud event.
+     *
+     * @param cloudEvent the cloud event to update
+     * @param topic      the next topic the event will be sent to
+     * @return the updated cloud event
+     */
+    public MicoCloudEventImpl<JsonNode> updateRouteHistoryWithTopic(MicoCloudEventImpl<JsonNode> cloudEvent, String topic) {
+        return this.updateRouteHistory(cloudEvent, topic, ROUTE_HISTORY_TYPE_TOPIC);
+    }
+
+    /**
+     * Update the routing history in the `route` header field of the cloud event.
+     *
+     * @param cloudEvent the cloud event to update
+     * @param id         the string id of the next routing step the message will take
+     * @param type       the type of the routing step ("topic" or "faas-function")
+     * @return the updated cloud event
+     */
+    public MicoCloudEventImpl<JsonNode> updateRouteHistory(MicoCloudEventImpl<JsonNode> cloudEvent, String id, String type) {
+        RouteHistory routingStep = new RouteHistory(type, id, ZonedDateTime.now());
+        List<RouteHistory> history = cloudEvent.getRoute().map(ArrayList::new).orElse(new ArrayList<>());
+        history.add(routingStep);
+        return new MicoCloudEventImpl<>(cloudEvent).setRoute(history);
     }
 
 
