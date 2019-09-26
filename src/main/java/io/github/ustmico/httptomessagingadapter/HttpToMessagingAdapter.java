@@ -163,7 +163,7 @@ public class HttpToMessagingAdapter {
         micoCloudEvent.setIsErrorMessage(false);
         micoCloudEvent.setIsTestMessage(false);
         micoCloudEvent.setReturnTopic(kafkaConfig.getInputTopic());
-        updateRouteHistoryWithTopic(micoCloudEvent, kafkaConfig.getOutputTopic());
+        micoCloudEvent = updateRouteHistoryWithTopic(micoCloudEvent, kafkaConfig.getOutputTopic());
 
         HttpRequestWrapper httpRequestWrapper = new HttpRequestWrapper();
         httpRequestWrapper.setHeader(getRequestHeaderMap(request));
