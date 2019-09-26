@@ -23,11 +23,12 @@ public class OpenRequestHandler {
     }
 
     public synchronized boolean addRequest(String correlationId, CompletableFuture<MicoCloudEventImpl<JsonNode>> value) {
-        log.info("Add open request to store. The store has a size of '{}'", openRequests.size());
+        log.info("Add open request to store with the id", correlationId);
         if (openRequests.containsKey(correlationId)) {
             return false;
         } else {
             openRequests.put(correlationId, value);
+            log.info("The store has no a size of '{}'", openRequests.size());
             return true;
         }
     }

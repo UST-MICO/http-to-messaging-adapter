@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
+import javax.xml.ws.Response;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -100,6 +101,7 @@ public class HttpToMessagingAdapter {
             CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture = new CompletableFuture<>();
 
             MicoCloudEventImpl<JsonNode> response = waitForResponseMessage(micoCloudEvent.getId(), openRequestFuture);
+            log.info("Got response for the message '{}' with the correlationId '{}'", micoCloudEvent.getId(), response.getCorrelationId());
 
             ResponseEntity.BodyBuilder responseBuild = getResponseBuilderWithHttpStatus(response);
 
@@ -107,10 +109,16 @@ public class HttpToMessagingAdapter {
             responseBuild = setHeaders(responseBuild, httpRequestWrapper.getHeader());
 
             String responseBody = httpRequestWrapper.getBody();
+            log.info("Reponse Body is '{}'", responseBody);
+            ResponseEntity responseEntity;
             if (responseBody != null && !responseBody.isEmpty()) {
-                return responseBuild.body(responseBody);
+                responseEntity = responseBuild.body(responseBody);
+                log.info("Returning with body the response entity '{}'", responseEntity);
+                return responseEntity;
             } else {
-                return responseBuild.build();
+                responseEntity = responseBuild.build();
+                log.info("Returning without body the response entity '{}'", responseEntity);
+                return responseEntity;
             }
         } catch (TimeoutException e) {
             return getErrorResponse(HttpStatus.GATEWAY_TIMEOUT, "No response in time", e);
@@ -123,6 +131,7 @@ public class HttpToMessagingAdapter {
         if (!headers.isEmpty()) {
             MultiValueMap<String, String> multiValueHeaderMap = new LinkedMultiValueMap<>();
             for (Map.Entry<String, String> entry : headers.entrySet()) {
+                log.info("Add header with key '{}' and value '{}'", entry.getKey(), entry.getValue());
                 multiValueHeaderMap.put(entry.getKey(), Collections.singletonList(entry.getValue()));
             }
             return responseBuilder.headers(new HttpHeaders(multiValueHeaderMap));
@@ -132,6 +141,7 @@ public class HttpToMessagingAdapter {
 
     private ResponseEntity.BodyBuilder getResponseBuilderWithHttpStatus(MicoCloudEventImpl<JsonNode> response) {
         int httpStatus = Integer.valueOf(response.getExtensionsMap().getOrDefault(CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS, defaultValue).asText());
+        log.info("Set the response status to '{}'", httpStatus);
         return ResponseEntity.status(httpStatus).headers(new HttpHeaders());
     }
 

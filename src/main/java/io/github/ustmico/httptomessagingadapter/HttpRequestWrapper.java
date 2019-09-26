@@ -16,6 +16,9 @@ public class HttpRequestWrapper {
 
     @JsonIgnore
     public String getBody() {
+        if (bodyBase64 == null) {
+            return null;
+        }
         byte[] decodedBytes = Base64.getDecoder().decode(bodyBase64);
         String decodedString = new String(decodedBytes, StandardCharsets.UTF_8);
         return decodedString;
