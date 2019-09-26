@@ -95,6 +95,7 @@ public class HttpToMessagingAdapter {
         try {
             MicoCloudEventImpl<JsonNode> micoCloudEvent = getMicoCloudEventFromHttpRequest(request, uriWithQueryString);
 
+            log.info("Sending cloud Event '{}' to topic '{}'", micoCloudEvent, kafkaConfig.getOutputTopic());
             kafkaTemplate.send(kafkaConfig.getOutputTopic(), micoCloudEvent);
             CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture = new CompletableFuture<>();
 

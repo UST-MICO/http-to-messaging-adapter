@@ -41,7 +41,7 @@ public class CloudEventSerializer implements Serializer<MicoCloudEventImpl<JsonN
         else {
             String eventAsString = Json.encode(data);
             byte[] eventAsBytes = eventAsString.getBytes(StandardCharsets.UTF_8);
-            log.debug("Serializing the event:'{}' to '{}'", data, eventAsString);
+            log.debug("Serializing the event:'{}' to '{}' on topic '{}'", data, eventAsString, topic);
             return eventAsBytes;
         }
     }

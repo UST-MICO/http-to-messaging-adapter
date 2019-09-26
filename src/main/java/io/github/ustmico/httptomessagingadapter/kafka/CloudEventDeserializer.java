@@ -43,7 +43,7 @@ public class CloudEventDeserializer implements Deserializer<MicoCloudEventImpl<J
         }
         try {
             String message = new String(data, StandardCharsets.UTF_8);
-            log.debug("Trying to parse the message:" + message);
+            log.debug("Trying to parse the message '{}'on topic '{}'", message, topic);
             MicoCloudEventImpl<JsonNode> micoCloudEvent = Json.decodeValue(message, new TypeReference<MicoCloudEventImpl<JsonNode>>() {
             });
             log.debug("Deserialized micoCloudEvent '{}' on topic: '{}'", micoCloudEvent.toString(), topic);

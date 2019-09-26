@@ -23,6 +23,7 @@ public class MessageListener {
         if (cloudEvent.getCorrelationId().isPresent()) {
             Optional<CompletableFuture<MicoCloudEventImpl<JsonNode>>> openRequestOptinal = openRequestHandler.getRequest(cloudEvent.getCorrelationId().get());
             if (openRequestOptinal.isPresent()) {
+                log.info("Found the right completableFuture");
                 openRequestOptinal.get().complete(cloudEvent);
             }
         }
