@@ -39,7 +39,6 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
-import javax.xml.ws.Response;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -127,6 +126,13 @@ public class HttpToMessagingAdapter {
         }
     }
 
+    /**
+     * Sets the provided headers in the given body builder
+     *
+     * @param responseBuilder
+     * @param headers
+     * @return a body builder with the provided headers
+     */
     private ResponseEntity.BodyBuilder setHeaders(ResponseEntity.BodyBuilder responseBuilder, Map<String, String> headers) {
         if (!headers.isEmpty()) {
             MultiValueMap<String, String> multiValueHeaderMap = new LinkedMultiValueMap<>();
@@ -139,22 +145,57 @@ public class HttpToMessagingAdapter {
         return responseBuilder;
     }
 
+    /**
+     * Generates a body builder with the http status from the cloud event
+     *
+     * @param response
+     * @return
+     */
     private ResponseEntity.BodyBuilder getResponseBuilderWithHttpStatus(MicoCloudEventImpl<JsonNode> response) {
         int httpStatus = Integer.valueOf(response.getExtensionsMap().getOrDefault(CLOUD_EVENT_ATTRIBUTE_HTTP_RESPONSE_STATUS, defaultValue).asText());
         log.info("Set the response status to '{}'", httpStatus);
         return ResponseEntity.status(httpStatus).headers(new HttpHeaders());
     }
 
+    /**
+     * Waits for a response with a correlationId matching the provided messageId.
+     *
+     * @param messageId
+     * @param openRequestFuture
+     * @return
+     * @throws InterruptedException
+     * @throws ExecutionException
+     * @throws TimeoutException
+     */
     private MicoCloudEventImpl<JsonNode> waitForResponseMessage(String messageId, CompletableFuture<MicoCloudEventImpl<JsonNode>> openRequestFuture) throws InterruptedException, ExecutionException, TimeoutException {
         openRequestHandler.addRequest(messageId, openRequestFuture);
-        return openRequestFuture.get(MESSAGE_RESPONSE_TIMEOUT, TimeUnit.MINUTES);
+        MicoCloudEventImpl<JsonNode> response = openRequestFuture.get(MESSAGE_RESPONSE_TIMEOUT, TimeUnit.MINUTES);
+        openRequestHandler.deleteRequest(messageId);
+        return response;
     }
 
+    /**
+     * Generates a response entity with the provided error message and http status.
+     *
+     * @param status
+     * @param errorMsg
+     * @param e
+     * @return
+     */
     private ResponseEntity getErrorResponse(HttpStatus status, String errorMsg, Exception e) {
         log.error(errorMsg, e);
         return ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT).body(e);
     }
 
+    /**
+     * Generates a cloud event and sets all the required attributes.
+     *
+     * @param request
+     * @param uriWithQueryString
+     * @return
+     * @throws URISyntaxException
+     * @throws IOException
+     */
     private MicoCloudEventImpl<JsonNode> getMicoCloudEventFromHttpRequest(HttpServletRequest request, String uriWithQueryString) throws URISyntaxException, IOException {
         MicoCloudEventImpl<JsonNode> micoCloudEvent = new MicoCloudEventImpl<>();
 
@@ -184,6 +225,13 @@ public class HttpToMessagingAdapter {
         return micoCloudEvent;
     }
 
+    /**
+     * Sets the response body from the request in the httpRequestWrapper.
+     *
+     * @param request
+     * @param httpRequestWrapper
+     * @throws IOException
+     */
     private void setRequestBody(HttpServletRequest request, HttpRequestWrapper httpRequestWrapper) throws IOException {
         String requestMethod = request.getMethod().toUpperCase();
         if (HttpMethod.POST.matches(requestMethod) || HttpMethod.PUT.matches(requestMethod)) {
@@ -192,6 +240,12 @@ public class HttpToMessagingAdapter {
         }
     }
 
+    /**
+     * Reads the headers from a request
+     *
+     * @param request
+     * @return
+     */
     private Map<String, String> getRequestHeaderMap(HttpServletRequest request) {
         List<String> headers = Collections.list(request.getHeaderNames());
         Map<String, String> headerMap = new HashMap<>();
@@ -202,6 +256,12 @@ public class HttpToMessagingAdapter {
     }
 
 
+    /**
+     * Gets the request uri with the query string and joins them with the backendUrl
+     *
+     * @param request
+     * @return
+     */
     public String getUriWithQueryString(HttpServletRequest request) {
         String requestUri = request.getRequestURI();
         String queryString = request.getQueryString();
