@@ -8,7 +8,7 @@ Example output:
   "source": "/http-to-messaging-adapter",
   "type": "httpEnvelop",
   "specversion": "0.2",
-  "time": "2019-10-07T14:03:52.488Z",
+  "time": "<TIME>",
   "schemaurl": null,
   "contenttype": "application/json",
   "data": {
@@ -19,13 +19,13 @@ Example output:
     {
       "type": "topic",
       "id": "req-start",
-      "timestamp": "2019-10-07T14:03:52.489Z"
+      "timestamp": "<TIME>"
     }
   ],
   "istestmessage": false,
   "iserrormessage": false,
   "returntopic": "result",
-  "adapterRequestUrl": "spring-boot-realworld-example-app-qyazszsl-httpbackend.mico-workspace.svc.cluster.local:80/",
+  "adapterRequestUrl": "example.com:80/",
   "adapterRequestMethod": "POST"
 }
 ```
